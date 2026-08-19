@@ -21,6 +21,34 @@ function favicon () {
   return utils.extractFilename(config.get('application.favicon'))
 }
 
+function isSafeExpression (expr: string): boolean {
+  const mathRegex = /^[0-9+\-*/%*()\s]+$/
+  if (mathRegex.test(expr)) {
+    return true
+  }
+
+  const isSingleQuoted = /^'([^'\\]|\\.)*'$/.test(expr)
+  const isDoubleQuoted = /^"([^"\\]|\\.)*"$/.test(expr)
+  const isTemplateQuoted = /^\x60([^\x60\\]|\\.)*\x60$/.test(expr) && !expr.includes('${')
+
+  if (isSingleQuoted || isDoubleQuoted || isTemplateQuoted) {
+    const lower = expr.toLowerCase()
+    const blacklisted = [
+      'process', 'require', 'global', 'window', 'document', 'constructor',
+      'prototype', '__proto__', 'function', 'eval', 'exec', 'spawn', 'child_process',
+      'import', 'async', 'await', '=>', 'promise', 'settimeout', 'setinterval'
+    ]
+    for (const word of blacklisted) {
+      if (lower.includes(word)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  return false
+}
+
 export function getUserProfile () {
   return async (req: Request, res: Response, next: NextFunction) => {
     let template: string
@@ -55,8 +83,8 @@ export function getUserProfile () {
       req.app.locals.abused_ssti_bug = true
       const code = username?.substring(2, username.length - 1)
       try {
-        if (!code) {
-          throw new Error('Username is null')
+        if (!code || !isSafeExpression(code)) {
+          throw new Error('Username is null or expression is unsafe')
         }
         username = eval(code) // eslint-disable-line no-eval
       } catch (err) {
